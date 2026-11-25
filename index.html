@@ -248,7 +248,7 @@
     color:transparent;
     background:repeating-linear-gradient(-40deg,#fff 0 8px,#F2A7B4 8px 13px,#fff 13px 20px,var(--lav) 20px 26px);
     -webkit-background-clip:text;background-clip:text;
-    filter:drop-shadow(0 0 1px #fff) drop-shadow(0 3px 4px rgba(0,0,0,.25));
+    -webkit-text-stroke:1.5px rgba(255,255,255,.9);
     padding:0 2px;
   }
   .candles.numbers .candle-btn{padding-top:34px}
@@ -295,8 +295,11 @@
     opacity:0;pointer-events:none;transition:opacity 1s ease;
   }
   .finale.show{opacity:1;pointer-events:auto}
-  .finale.lift{align-items:flex-end;padding-bottom:max(28px,env(safe-area-inset-bottom));
-    background:linear-gradient(to bottom, rgba(14,27,51,0) 0%, rgba(14,27,51,.55) 60%);backdrop-filter:none;-webkit-backdrop-filter:none}
+  .finale{flex-direction:column;justify-content:flex-start;overflow-y:auto;gap:4px}
+  .finale > :first-child{margin-top:auto}.finale > :last-child{margin-bottom:auto}
+  .finale > *{flex-shrink:0}
+  .finale.lift{background:linear-gradient(to bottom, rgba(14,27,51,0) 0%, rgba(14,27,51,.5) 60%);backdrop-filter:none;-webkit-backdrop-filter:none}
+  .c20b{width:min(380px,86vw);height:clamp(110px,26vh,240px);display:block}
 
   /* Botón de sonido */
   .sound-btn{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;z-index:9;
@@ -491,6 +494,7 @@
 
 <!-- FINAL -->
 <div class="finale" id="finale" role="dialog" aria-live="polite">
+  <canvas class="c20b" id="c20b" aria-label="20"></canvas>
   <div class="finale-card">
     <h1>¡Feliz cumpleaños!</h1>
     <div class="age-badge">20</div>
@@ -810,55 +814,68 @@ function celebrate(){
   setTimeout(() => { constellation(String(CONFIG.edad)); SFX.sparkle(); }, 1000);
   setTimeout(() => {
     show('none'); $('#finale').classList.add('show','lift'); SFX.birthday();
-    // el 20 sube y se acomoda encima de la tarjeta
-    setTimeout(() => {
-      const top = $('.finale-card').getBoundingClientRect().top;
-      if (top > 110) constellation(String(CONFIG.edad), top/2, Math.min(innerWidth*.5, top*.8));
-      else c20.style.opacity = .25;
-    }, 1000);
+    // el 20 grande se desvanece y se vuelve a formar encima de la tarjeta
+    c20.style.opacity = 0;
+    setTimeout(() => { if (stopBig) stopBig(); stopBig = null; }, 900);
+    if (stopSmall) stopSmall();
+    stopSmall = makeConstellation($('#c20b'), String(CONFIG.edad));
   }, 3800);
 }
 
 /* ---------- Constelación con el número 20 ---------- */
-const c20 = $('#c20'), x20 = c20.getContext('2d');
-let stars20 = [], raf20 = null;
-function size20(){ c20.width = innerWidth*devicePixelRatio; c20.height = innerHeight*devicePixelRatio; x20.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
-addEventListener('resize', size20); size20();
-function constellation(text, cy, fsz){
-  const W = innerWidth, H = innerHeight;
-  c20.style.opacity = 1;
-  const off = document.createElement('canvas'); off.width = W; off.height = H;
+// Dibuja el texto con estrellitas dentro de un canvas (se ajusta a su tamaño)
+function makeConstellation(canvas, text){
+  const box = canvas.getBoundingClientRect();
+  const W = Math.max(1, box.width), H = Math.max(1, box.height), dpr = window.devicePixelRatio || 1;
+  canvas.width = W*dpr; canvas.height = H*dpr;
+  const g = canvas.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+  const off = document.createElement('canvas'); off.width = Math.ceil(W); off.height = Math.ceil(H);
   const o = off.getContext('2d');
-  const fs = fsz || Math.min(W*0.62, H*0.34);
-  o.font = `700 ${fs}px Quicksand, sans-serif`; o.textAlign = 'center'; o.textBaseline = 'middle';
-  o.fillText(text, W/2, cy || H*0.36);
-  const data = o.getImageData(0,0,W,H).data, step = Math.max(6, Math.round(fs/26)), pts = [];
-  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step)
-    if (data[(y*W + x)*4 + 3] > 128) pts.push([x + (Math.random()-.5)*2, y + (Math.random()-.5)*2]);
-  const prev = stars20;
-  stars20 = pts.map(([tx,ty], i) => ({
-    x: prev.length ? prev[i % prev.length].x : Math.random()*W,
-    y: prev.length ? prev[i % prev.length].y : Math.random()*H, tx, ty,
-    r: Math.random()*1.4 + 1, ph: Math.random()*6.28,
+  let fs = H*1.05;
+  o.font = `700 ${fs}px Quicksand, Arial, sans-serif`;
+  const tw = o.measureText(text).width;
+  if (tw > W*.9){ fs *= (W*.9)/tw; o.font = `700 ${fs}px Quicksand, Arial, sans-serif`; }
+  o.textAlign = 'center'; o.textBaseline = 'middle';
+  o.fillText(text, W/2, H/2 + fs*.04);
+  const data = o.getImageData(0,0,off.width,off.height).data;
+  const step = Math.max(4, Math.round(fs/22)), pts = [];
+  for (let y = 0; y < off.height; y += step) for (let x = 0; x < off.width; x += step)
+    if (data[(y*off.width + x)*4 + 3] > 128) pts.push([x, y]);
+  const r0 = Math.max(1, step*.28);
+  const stars = pts.map(([tx,ty]) => ({
+    x: Math.random()*W, y: Math.random()*H - H*.5, tx, ty,
+    r: r0 + Math.random()*r0*.7, ph: Math.random()*6.28,
     c: Math.random() < .14 ? '#FF5A70' : Math.random() < .5 ? '#FFFFFF' : '#D5C3F2',
-    d: prev.length ? 0 : Math.random()*25
+    d: Math.random()*25
   }));
-  cancelAnimationFrame(raf20); let f = 0;
+  let f = 0, id = null;
   (function draw(){
     f++;
-    x20.clearRect(0,0,W,H);
-    stars20.forEach(p => {
-      if (f > p.d){ p.x += (p.tx - p.x)*.06; p.y += (p.ty - p.y)*.06; }
-      const tw = .55 + .45*Math.sin(f*.06 + p.ph);
-      x20.globalAlpha = tw; x20.fillStyle = p.c;
-      x20.shadowColor = p.c; x20.shadowBlur = 8;
-      x20.beginPath(); x20.arc(p.x, p.y, p.r, 0, 6.28); x20.fill();
+    g.clearRect(0,0,W,H);
+    stars.forEach(p => {
+      if (f > p.d){ p.x += (p.tx - p.x)*.07; p.y += (p.ty - p.y)*.07; }
+      g.globalAlpha = .55 + .45*Math.sin(f*.06 + p.ph);
+      g.fillStyle = p.c; g.shadowColor = p.c; g.shadowBlur = 8;
+      g.beginPath(); g.arc(p.x, p.y, p.r, 0, 6.28); g.fill();
     });
-    x20.globalAlpha = 1; x20.shadowBlur = 0;
-    raf20 = requestAnimationFrame(draw);
+    g.globalAlpha = 1; g.shadowBlur = 0;
+    id = requestAnimationFrame(draw);
   })();
+  return () => { cancelAnimationFrame(id); g.clearRect(0,0,W,H); };
 }
-function clear20(){ cancelAnimationFrame(raf20); x20.clearRect(0,0,innerWidth,innerHeight); stars20 = []; }
+const c20 = $('#c20');
+c20.style.transition = 'opacity .8s ease';
+let stopBig = null, stopSmall = null;
+function constellation(text){
+  // 20 grande en medio del cielo
+  if (stopBig) stopBig();
+  c20.style.opacity = 1;
+  c20.style.width = '100vw'; c20.style.height = '100vh';
+  stopBig = makeConstellation(c20, text);
+}
+function clear20(){
+  if (stopBig) stopBig(); if (stopSmall) stopSmall(); stopBig = stopSmall = null;
+}
 
 /* =========================================================
    🙈  TRAVESURAS DE LA ESPERA
